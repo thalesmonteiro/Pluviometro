@@ -635,17 +635,27 @@ SELECT
     MOVLW   '<'
     CALL    ESCREVE
     
+    ;ESCREVE DIA
     MOVFW   DIA
     CALL    SEPARA_RTC
-    MOVLW   0x30
-    ADDWF   DEZENA_RTC,W
-    CALL    ESCREVE
-    MOVLW   0x30
-    ADDWF   UNIDADE_RTC,W
-    CALL    ESCREVE
-    MOVLW   '>'
-    CALL    ESCREVE
-    
+    MOVF    DEZENA_RTC,W
+    MOVWF   AUX
+    MOVLW   .10
+    SUBWF   AUX,W  ; AUX - 10
+    BTFSC   STATUS, C   ; C = 0 NEGATIVO
+    CALL    MAIOR_QUE
+    BTFSS   STATUS, C
+    CALL    MENOR_QUE
+	
+    MOVF    UNIDADE_RTC,W
+    MOVWF   AUX
+    MOVLW   .10
+    SUBWF   AUX,W  ; AUX - 10
+    BTFSC   STATUS, C   ; C = 0 NEGATIVO
+    CALL    MAIOR_QUE
+    BTFSS   STATUS, C
+    CALL    MENOR_QUE
+	
     
     MOVLW   '/'
     CALL    ESCREVE
