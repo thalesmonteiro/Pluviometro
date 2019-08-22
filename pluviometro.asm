@@ -96,6 +96,8 @@
 		R3
 		R2
 		R1
+		ASCII_MSW	;Clear output registers
+		ASCII_LSW
 	ENDC			;FIM DO BLOCO DE MEMÓRIA
 	
 ;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -221,6 +223,7 @@ LER_HORA   ;LER A HORA NO RTC (0 - 23)
     MOVWF   ENDERECO_RTC
     CALL    LEITURA_I2C_RTC
     MOVF    SAIDA_RTC,W
+    CALL    BCD_TO_DEC
     MOVWF   HORA
     RETURN
   
@@ -231,6 +234,7 @@ LER_DIA    ;LER A DATA NO RTC  (1 - 31)
     MOVWF   ENDERECO_RTC
     CALL    LEITURA_I2C_RTC
     MOVF    SAIDA_RTC,W
+    CALL    BCD_TO_DEC
     MOVWF   DIA
     RETURN
      
@@ -240,6 +244,7 @@ LER_MES     ;LER O MES  (1 - 12)
     MOVWF   ENDERECO_RTC
     CALL    LEITURA_I2C_RTC
     MOVF    SAIDA_RTC,W
+    CALL    BCD_TO_DEC
     MOVWF   MES
     RETURN
     
@@ -249,6 +254,7 @@ LER_ANO     ;LER ANO ( 00 - 99)
     MOVWF   ENDERECO_RTC
     CALL    LEITURA_I2C_RTC
     MOVF    SAIDA_RTC,W
+    CALL    BCD_TO_DEC
     MOVWF   ANO
     RETURN
 
@@ -410,6 +416,19 @@ ENDERECO_HORA
     
     ;ROTINA QUE CALCULA O ENDERECO RESPECTIVO AO DIA ATUAL NA EEPROM
     ;ESSA ROTINA NECESSITA DO VALOR DO DIA E DO MES
+BCD_TO_DEC ;ESPERA QUE VALOR A SER CONVERTIDO ESTEJA NO WORK E RETORNA NO W
+    MOVWF   AUX2
+    RRF	    AUX2, W 
+    ANDLW   B'01111000'  ;W = tens*8 
+    MOVWF   AUX
+    BCF	    STATUS,C
+    RRF	    AUX,F
+    RRF	    AUX,F
+    SUBWF   AUX2,W
+    ADDWF   AUX,W
+    
+    RETURN
+    
 ENDERECO_DIA  ;DIA *2 + 166 + 62(MES - 1) +732(ANO -2019)
     MOVF    DIA,W
     CALL    SEPARA_RTC
@@ -462,7 +481,7 @@ ENDERECO_DIA  ;DIA *2 + 166 + 62(MES - 1) +732(ANO -2019)
     MOVWF   BYTE1_LOW
     
     CALL    LER_ANO
-    MOVLW   .2019
+    MOVLW   .19
     SUBWF   ANO,W  ;ANO - 2019
     MOVWF   T
     
@@ -637,25 +656,11 @@ SELECT
     
     ;ESCREVE DIA
     MOVFW   DIA
-    CALL    SEPARA_RTC
-    MOVF    DEZENA_RTC,W
-    MOVWF   AUX
-    MOVLW   .10
-    SUBWF   AUX,W  ; AUX - 10
-    BTFSC   STATUS, C   ; C = 0 NEGATIVO
-    CALL    MAIOR_QUE
-    BTFSS   STATUS, C
-    CALL    MENOR_QUE
-	
-    MOVF    UNIDADE_RTC,W
-    MOVWF   AUX
-    MOVLW   .10
-    SUBWF   AUX,W  ; AUX - 10
-    BTFSC   STATUS, C   ; C = 0 NEGATIVO
-    CALL    MAIOR_QUE
-    BTFSS   STATUS, C
-    CALL    MENOR_QUE
-	
+    CALL    ASCII_TO_LCD
+    MOVF    ASCII_MSW,W
+    CALL    ESCREVE
+    MOVF    ASCII_LSW
+    CALL    ESCREVE
     
     MOVLW   '/'
     CALL    ESCREVE
@@ -732,6 +737,9 @@ CHECA_BOTAO_RB5
     CALL    DELAY_MILE
     RETURN
     
+ASCII_TO_LCD	;ESPERA O BYTE NO W
+
+    RETURN
     
 EXIBE_MENU  ;EXIBE MIN X
     
