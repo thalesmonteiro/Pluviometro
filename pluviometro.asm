@@ -98,6 +98,9 @@
 		R1
 		ASCII_MSW	;Clear output registers
 		ASCII_LSW
+		dezena
+		unidade
+		valor_10
 	ENDC			;FIM DO BLOCO DE MEMÓRIA
 	
 ;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -151,15 +154,11 @@
 ; AQUI SERÁ ESCRITA AS ROTINAS DE RECONHECIMENTO E TRATAMENTO DAS
 ; INTERRUPÇÕES
 	CALL	INICIALIZA_DISPLAY
+	BTFSC	PORTB,RB5
+	CALL	SELECAO_DIA
 	BTFSC	PORTB,RB6
+	CALL	EXIBE_MINUTO
 	CALL	EXIBE_MENU
-	GOTO	TENSO
-	GOTO	SAI_INT
-TENSO
-	BTFSC	PORTB,RB4
-	CALL	EXIBE_MENU_HOME
-	GOTO	SAI_INT
-
 ;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
 ;*                 ROTINA DE SAÍDA DA INTERRUPÇÃO                  *
 ;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -168,7 +167,7 @@ TENSO
 
 SAI_INT
 	MOVFW	PORTB
-	BCF	INTCON,RBIF
+	BCF	INTCON,RBIF  ;LIMPA FLAG DE INTERRUPÇÃO
 	SWAPF	STATUS_TEMP,W
 	MOVWF	STATUS		;MOVE STATUS_TEMP PARA STATUS
 	SWAPF	W_TEMP,F
@@ -212,6 +211,7 @@ LER_MINUTO   ;LER O MINUTO NO RTC  (0 - 59)
     MOVWF   ENDERECO_RTC
     CALL    LEITURA_I2C_RTC
     MOVF    SAIDA_RTC, W
+    CALL    BCD_TO_DEC
     MOVWF   MINUTO
     MOVLW   .3
     CALL    DELAY_MILE
@@ -617,14 +617,20 @@ SOMATORIO1
     MOVWF   DIA
     CALL    ENDERECO_DIA ;retorna em endereço high e endereço low
    
-    
-    
+ 
     CALL    ESCRITA_I2C_EEPROM
     
     RETURN
+    
+    
 SELECAO_DIA  ; RB4 = - RB5 = OK  RB6 = +
     CLRF    INTCON ;DESLIGA A INTERRUPÇÃO
     CALL    LER_DIA
+    CALL    LER_MES
+    CALL    LER_ANO
+    
+    MOVLW   .100
+    CALL    DELAY_MILE
     
 SELECT
     BCF	    RS		   
@@ -656,10 +662,16 @@ SELECT
     
     ;ESCREVE DIA
     MOVFW   DIA
-    CALL    ASCII_TO_LCD
-    MOVF    ASCII_MSW,W
+    CALL    DIVIDE_POR_10  
+    MOVLW   0X30
+    ADDWF   AUX,W
     CALL    ESCREVE
-    MOVF    ASCII_LSW
+    
+    MOVLW   0X30
+    ADDWF   AUX2,w
+    CALL    ESCREVE
+
+    MOVLW   '>'
     CALL    ESCREVE
     
     MOVLW   '/'
@@ -667,24 +679,24 @@ SELECT
     
     CALL    LER_MES
     MOVFW   MES
-    CALL    SEPARA_RTC 
+    CALL    DIVIDE_POR_10
     MOVLW   0x30
-    ADDWF   DEZENA_RTC,W
+    ADDWF   AUX,W
     CALL    ESCREVE
     MOVLW   0x30
-    ADDWF   UNIDADE_RTC,W
+    ADDWF   AUX2,W
     CALL    ESCREVE
     
     MOVLW   '/'
     CALL    ESCREVE
     
     CALL    LER_ANO
-    CALL    SEPARA_RTC 
+    CALL    DIVIDE_POR_10 
     MOVLW   0x30
-    ADDWF   DEZENA_RTC,W
+    ADDWF   AUX,W
     CALL    ESCREVE
     MOVLW   0x30
-    ADDWF   UNIDADE_RTC,W
+    ADDWF   AUX2,W
     CALL    ESCREVE
 
     BCF	    RS
@@ -716,29 +728,283 @@ SELECT
 CHECA_BOTAO_RB4
     BTFSS   PORTB,RB4
     GOTO    CHECA_BOTAO_RB6
+    MOVLW   .1
+    SUBWF   DIA,W
+    BTFSC   STATUS,Z
+    GOTO    CHECA_BOTAO_RB4
     DECF    DIA,F
-    MOVLW   .255
+    
+    MOVLW   .150
     CALL    DELAY_MILE
     GOTO    SELECT
     
 CHECA_BOTAO_RB6   
     BTFSS   PORTB,RB6
     GOTO    CHECA_BOTAO_RB5
+    MOVLW   .31
+    SUBWF   DIA,W
+    BTFSC   STATUS,Z
+    GOTO    CHECA_BOTAO_RB4
     INCF    DIA,F
     
-    MOVLW   .255
+    MOVLW   .150
     CALL    DELAY_MILE
     GOTO    SELECT
     
 CHECA_BOTAO_RB5
     BTFSS   PORTB,RB5
     GOTO    CHECA_BOTAO_RB4
-    MOVLW   .255
+    MOVLW   .150
     CALL    DELAY_MILE
-    RETURN
+    GOTO    SELECIONA_MES
+   
+SELECIONA_MES
+    BCF	    RS		   
+    MOVLW   0xF 
+    CALL    ESCREVE         ; LIMPA DISPLAY
+    BSF	    RS
     
-ASCII_TO_LCD	;ESPERA O BYTE NO W
+    BCF	    RS
+    MOVLW   0X88          ; DEFINE O CURSOR PARA LINHA 0
+    CALL    ESCREVE
+    BSF	    RS	
+    
+    MOVLW   'D'
+    CALL    ESCREVE
+    MOVLW   'A'
+    CALL    ESCREVE
+    MOVLW   'T'
+    CALL    ESCREVE
+    MOVLW   'A'
+    CALL    ESCREVE
+    
+    BCF	    RS
+    MOVLW   0XC4          ; DEFINE O CURSOR PARA LINHA 0
+    CALL    ESCREVE
+    BSF	    RS	
+    
+    MOVFW   DIA
+    CALL    DIVIDE_POR_10  
+    MOVLW   0X30
+    ADDWF   AUX,W
+    CALL    ESCREVE
+    
+    MOVLW   0X30
+    ADDWF   AUX2,w
+    CALL    ESCREVE
+    
+    MOVLW   '/'
+    CALL    ESCREVE
+    
+    MOVLW   '<'
+    CALL    ESCREVE
+    
+    MOVFW   MES
+    CALL    DIVIDE_POR_10
+    MOVLW   0x30
+    ADDWF   AUX,W
+    CALL    ESCREVE
+    MOVLW   0x30
+    ADDWF   AUX2,W
+    CALL    ESCREVE
+    MOVLW   '>'
+    CALL    ESCREVE
+    
+    MOVLW   '/'
+    CALL    ESCREVE
+    
+    MOVFW   ANO
+    CALL    DIVIDE_POR_10 
+    MOVLW   0x30
+    ADDWF   AUX,W
+    CALL    ESCREVE
+    MOVLW   0x30
+    ADDWF   AUX2,W
+    CALL    ESCREVE
 
+    BCF	    RS
+    MOVLW   0XD5        
+    CALL    ESCREVE
+    BSF	    RS
+    
+    MOVLW   '-'
+    CALL    ESCREVE
+    
+    BCF	    RS
+    MOVLW   0XDD        
+    CALL    ESCREVE
+    BSF	    RS
+    
+    MOVLW   'O'
+    CALL    ESCREVE
+    MOVLW   'K'
+    CALL    ESCREVE
+    
+    BCF	    RS
+    MOVLW   0XE6       
+    CALL    ESCREVE
+    BSF	    RS
+    
+    MOVLW   '+'
+    CALL    ESCREVE
+
+CHECA_RB4
+    BTFSS   PORTB,RB4
+    GOTO    CHECA_RB6
+    MOVLW   .1
+    SUBWF   MES,W
+    BTFSC   STATUS,Z
+    GOTO    CHECA_RB4
+    DECF    MES,F
+    
+    MOVLW   .150
+    CALL    DELAY_MILE
+    GOTO    SELECIONA_MES
+    
+CHECA_RB6
+    BTFSS   PORTB,RB6
+    GOTO    CHECA_RB5
+    MOVLW   .12
+    SUBWF   MES,W
+    BTFSC   STATUS,Z
+    GOTO    CHECA_RB4
+    INCF    MES,F
+    
+    MOVLW   .150
+    CALL    DELAY_MILE
+    GOTO    SELECIONA_MES
+    
+CHECA_RB5
+    BTFSS   PORTB,RB5
+    GOTO    CHECA_RB4
+    MOVLW   .150
+    CALL    DELAY_MILE
+    
+    GOTO    SELECIONA_ANO
+    
+SELECIONA_ANO
+    BCF	    RS		   
+    MOVLW   0xF 
+    CALL    ESCREVE         ; LIMPA DISPLAY
+    BSF	    RS
+    
+    BCF	    RS
+    MOVLW   0X88          ; DEFINE O CURSOR PARA LINHA 0
+    CALL    ESCREVE
+    BSF	    RS	
+    
+    MOVLW   'D'
+    CALL    ESCREVE
+    MOVLW   'A'
+    CALL    ESCREVE
+    MOVLW   'T'
+    CALL    ESCREVE
+    MOVLW   'A'
+    CALL    ESCREVE
+    
+    BCF	    RS
+    MOVLW   0XC4          ; DEFINE O CURSOR PARA LINHA 0
+    CALL    ESCREVE
+    BSF	    RS	
+    
+    MOVFW   DIA
+    CALL    DIVIDE_POR_10  
+    MOVLW   0X30
+    ADDWF   AUX,W
+    CALL    ESCREVE
+    
+    MOVLW   0X30
+    ADDWF   AUX2,w
+    CALL    ESCREVE
+    
+    MOVLW   '/'
+    CALL    ESCREVE
+
+    MOVFW   MES
+    CALL    DIVIDE_POR_10
+    MOVLW   0x30
+    ADDWF   AUX,W
+    CALL    ESCREVE
+    MOVLW   0x30
+    ADDWF   AUX2,W
+    CALL    ESCREVE
+    
+    MOVLW   '/'
+    CALL    ESCREVE
+    
+    MOVLW   '<'
+    CALL    ESCREVE
+    
+    MOVFW   ANO
+    CALL    DIVIDE_POR_10 
+    MOVLW   0x30
+    ADDWF   AUX,W
+    CALL    ESCREVE
+    MOVLW   0x30
+    ADDWF   AUX2,W
+    CALL    ESCREVE
+    
+    MOVLW   '>'
+    CALL    ESCREVE
+    
+    BCF	    RS
+    MOVLW   0XD5        
+    CALL    ESCREVE
+    BSF	    RS
+    
+    MOVLW   '-'
+    CALL    ESCREVE
+    
+    BCF	    RS
+    MOVLW   0XDD        
+    CALL    ESCREVE
+    BSF	    RS
+    
+    MOVLW   'O'
+    CALL    ESCREVE
+    MOVLW   'K'
+    CALL    ESCREVE
+    
+    BCF	    RS
+    MOVLW   0XE6       
+    CALL    ESCREVE
+    BSF	    RS
+    
+    MOVLW   '+'
+    CALL    ESCREVE
+
+CHECA_RB4_1
+    BTFSS   PORTB,RB4
+    GOTO    CHECA_RB6_1
+    MOVLW   .19
+    SUBWF   ANO,W
+    BTFSC   STATUS,Z
+    GOTO    CHECA_RB4_1
+    DECF    ANO,F
+    
+    MOVLW   .150
+    CALL    DELAY_MILE
+    GOTO    SELECIONA_ANO
+    
+CHECA_RB6_1
+    BTFSS   PORTB,RB6
+    GOTO    CHECA_RB5_1
+    MOVLW   .29
+    SUBWF   ANO,W
+    BTFSC   STATUS,Z
+    GOTO    CHECA_RB4_1
+    INCF    ANO,F
+    
+    MOVLW   .150
+    CALL    DELAY_MILE
+    GOTO    SELECIONA_ANO
+    
+CHECA_RB5_1
+    BTFSS   PORTB,RB5
+    GOTO    CHECA_RB4_1
+    MOVLW   .150
+    CALL    DELAY_MILE
+  
     RETURN
     
 EXIBE_MENU  ;EXIBE MIN X
@@ -1254,8 +1520,34 @@ DIA_30
     MOVLW   .30
     MOVWF   DIA
     RETURN
-    
-    
+
+DIVIDE_POR_10	;ESPERA O VALOR A SER DIVIDIDO NO WORK, DEZENA = AUX, UNIDADE = AUX2
+    CLRF    AUX 
+    MOVWF   BUFFER
+DEZENA_T
+    BCF	    STATUS,Z
+    BCF	    STATUS,C
+    MOVLW   .10
+    SUBWF   BUFFER,W
+    BTFSS   STATUS,Z
+    GOTO    DEZENA_P
+    INCF    AUX,F
+    MOVWF   AUX2
+    GOTO    OUT
+
+DEZENA_P
+    BTFSS   STATUS,C
+    GOTO    OUT_TEMP
+    MOVWF   BUFFER
+    INCF    AUX,F
+    GOTO    DEZENA_T
+OUT_TEMP
+    MOVF    BUFFER,W
+    MOVWF   AUX2
+OUT
+    RETURN
+   
+
 MIN_59   ;COMO É EXIBIDO O MINUTO ANTERIOR PRECISAMOS EXIBIR 59 QUANDO FOR LIDO 00
     MOVLW   '5'
     CALL    ESCREVE
@@ -1507,8 +1799,7 @@ MAIN
 	;CALL	ZERA_EEPROM
 	CALL    INICIALIZA_DISPLAY
 	;CALL	CARACTER_GOTA
-	;CALL	EXIBE_MENU_HOME
-	CALL	SELECAO_DIA
+	CALL	EXIBE_MENU_HOME
 	
 	;CALL	EXIBE_MENU_MESES
 	GOTO	FIM
